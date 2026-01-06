@@ -20,6 +20,7 @@ Comprehensive Claude Skills for building APIs with Django REST Framework efficie
 | **Advanced** | [throttling](./throttling/) | Rate limiting | Intermediate |
 | **Advanced** | [versioning](./versioning/) | API versioning strategies | Advanced |
 | **Advanced** | [api-documentation](./api-documentation/) | OpenAPI and schema generation | Advanced |
+| **Special** | [advanced-routing](./advanced-routing/) | Custom routers, nested URLs (edge cases) | Advanced |
 
 ---
 
@@ -167,16 +168,19 @@ skill-name/
 ### "I need API documentation"
 → [api-documentation](./api-documentation/) for OpenAPI/Swagger
 
+### "I need custom URL patterns or nested routes"
+→ [advanced-routing](./advanced-routing/) for custom routers and nested resources (special cases only)
+
 ---
 
 ## Total Content
 
 | Metric | Count |
 |--------|-------|
-| Skills | 12 |
-| Reference Files | 50+ |
-| Code Examples | 10,000+ lines |
-| Total Documentation | ~45,000 lines |
+| Skills | 13 |
+| Reference Files | 35+ |
+| Code Examples | 3,000+ lines |
+| Total Documentation | ~12,000 lines |
 
 ---
 

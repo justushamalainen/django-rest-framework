@@ -7,226 +7,145 @@ version: 1.0.0
 
 # DRF Error Handling Skill
 
-Master Django REST Framework's comprehensive error handling system. Learn how to use built-in exceptions, create custom error types, implement sophisticated exception handlers, and format error responses for better API debugging and user experience.
+**Key Insight: Most error handling is automatic. You rarely need custom handlers.**
+
+Django REST Framework's default error handling covers 95% of use cases. This skill teaches you how to use built-in exceptions effectively and when (rarely) to customize.
 
 ## What You'll Learn
 
-After completing this skill, you'll be able to:
+- Use **ValidationError** for invalid input (the 80% case)
+- Choose between **NotFound**, **PermissionDenied**, and **NotAuthenticated**
+- Avoid common mistakes with error handling
+- Customize exception handlers only when truly needed
 
-- **Choose the right built-in exception** for any error scenario (ValidationError, NotFound, PermissionDenied, etc.)
-- **Create custom exception classes** with appropriate status codes and error details
-- **Implement custom exception handlers** to transform errors into consistent API responses
-- **Format error responses** with proper structure, codes, and debugging information
-- **Handle Django exceptions** (Http404, PermissionDenied) in DRF views
-- **Use error codes** for programmatic error handling by API clients
-- **Debug complex validation errors** with nested data structures
-- **Implement retry logic** for throttled requests
-- **Add context to errors** for better debugging and monitoring
-- **Follow error handling best practices** for production APIs
+## Quick Start: ValidationError (The 80% Case)
 
-## Quick Start
-
-### Basic Exception Handling
+Most API errors are validation errors. DRF makes these simple:
 
 ```python
-from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.decorators import api_view
-from rest_framework.exceptions import (
-    NotFound, PermissionDenied, ValidationError,
-    AuthenticationFailed, Throttled
-)
 from rest_framework.response import Response
 
-@api_view(['GET'])
-def get_user(request, user_id):
-    """Raise appropriate exceptions based on the scenario."""
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        # Returns 404 with {"detail": "User not found"}
-        raise NotFound("User not found")
+@api_view(['POST'])
+def create_user(request):
+    # Field-specific errors (best practice)
+    if not request.data.get('email'):
+        raise ValidationError({'email': 'This field is required'})
 
-    # Check permissions
-    if not request.user.has_perm('view_user', user):
-        # Returns 403
-        raise PermissionDenied("You cannot view this user")
+    if '@' not in request.data.get('email', ''):
+        raise ValidationError({'email': 'Enter a valid email address'})
 
-    serializer = UserSerializer(user)
-    return Response(serializer.data)
+    # Multiple field errors
+    errors = {}
+    if len(request.data.get('password', '')) < 8:
+        errors['password'] = 'Password must be at least 8 characters'
+    if request.data.get('age', 0) < 18:
+        errors['age'] = 'Must be 18 or older'
+
+    if errors:
+        raise ValidationError(errors)
+
+    # Single error message (less common)
+    if User.objects.filter(email=request.data['email']).exists():
+        raise ValidationError('Email already registered')
+
+    # Create user...
+    return Response({'id': user.id}, status=201)
 ```
 
-### Custom Exception Handler
-
-```python
-# myapp/exceptions.py
-from rest_framework.views import exception_handler
-from rest_framework.exceptions import APIException
-import logging
-
-logger = logging.getLogger(__name__)
-
-def custom_exception_handler(exc, context):
-    """
-    Custom exception handler that adds extra context to error responses.
-
-    Args:
-        exc: The exception instance
-        context: Dict with 'view' and 'request' keys
-
-    Returns:
-        Response object or None
-    """
-    # Call DRF's default handler first
-    response = exception_handler(exc, context)
-
-    if response is not None:
-        # Add custom fields to all error responses
-        response.data['status_code'] = response.status_code
-        response.data['error_type'] = exc.__class__.__name__
-
-        # Add request context for debugging
-        if hasattr(context.get('request'), 'user'):
-            user = context['request'].user
-            if user.is_authenticated:
-                response.data['user_id'] = user.id
-
-        # Add view info
-        if 'view' in context:
-            response.data['path'] = context['request'].path
-
-        # Log the error
-        logger.error(
-            f"API Error: {exc.__class__.__name__} at {context['request'].path}",
-            exc_info=True,
-            extra={
-                'status_code': response.status_code,
-                'user': getattr(context['request'].user, 'id', None),
-                'method': context['request'].method,
-            }
-        )
-    else:
-        # Handle non-API exceptions (will result in 500)
-        logger.exception(f"Unhandled exception: {exc}")
-
-    return response
-
-# settings.py
-REST_FRAMEWORK = {
-    'EXCEPTION_HANDLER': 'myapp.exceptions.custom_exception_handler'
+**Response format:**
+```json
+{
+  "email": ["Enter a valid email address"],
+  "password": ["Password must be at least 8 characters"]
 }
 ```
 
-### Creating Custom Exceptions
+## Decision Tree: Which Exception?
+
+90% of the time, you only need these three:
+
+```
+Is the data invalid?
+└─ YES → ValidationError (400)
+
+Does the resource exist?
+└─ NO → NotFound (404)
+
+Does the user have permission?
+└─ NO → PermissionDenied (403)
+```
+
+### The Essential Three Exceptions
 
 ```python
-# myapp/exceptions.py
-from rest_framework import status
-from rest_framework.exceptions import APIException
+from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
 
-class ServiceUnavailable(APIException):
-    """Raised when an external service is unavailable."""
-    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    default_detail = 'Service temporarily unavailable, try again later.'
-    default_code = 'service_unavailable'
+@api_view(['GET', 'PUT'])
+def update_post(request, post_id):
+    # 1. Check if exists
+    try:
+        post = Post.objects.get(id=post_id)
+    except Post.DoesNotExist:
+        raise NotFound('Post not found')
 
-class PaymentRequired(APIException):
-    """Raised when payment is required to access a resource."""
-    status_code = status.HTTP_402_PAYMENT_REQUIRED
-    default_detail = 'Payment required to access this resource.'
-    default_code = 'payment_required'
+    # 2. Check permission
+    if post.author != request.user:
+        raise PermissionDenied('Only the author can edit this post')
 
-class ResourceConflict(APIException):
-    """Raised when there's a conflict with the current state."""
-    status_code = status.HTTP_409_CONFLICT
-    default_detail = 'The request conflicts with the current state.'
-    default_code = 'conflict'
+    # 3. Validate input
+    if request.method == 'PUT':
+        if not request.data.get('title'):
+            raise ValidationError({'title': 'This field is required'})
 
-# Usage in views
-from myapp.exceptions import ServiceUnavailable, PaymentRequired
+        if len(request.data['title']) > 200:
+            raise ValidationError({'title': 'Title too long (max 200 chars)'})
+
+        # Update post...
+
+    return Response(PostSerializer(post).data)
+```
+
+## Quick Reference: Other Built-in Exceptions
+
+DRF automatically handles these - you rarely raise them manually:
+
+```python
+from rest_framework.exceptions import (
+    NotAuthenticated,      # 401 - No auth provided (auto-handled by auth classes)
+    AuthenticationFailed,  # 401 - Invalid credentials (auto-handled by auth classes)
+    Throttled,            # 429 - Rate limited (auto-handled by throttle classes)
+    MethodNotAllowed,     # 405 - Wrong HTTP method (auto-handled by DRF)
+    ParseError,           # 400 - Malformed JSON (auto-handled by parsers)
+)
+```
+
+**Example when you might use them:**
+```python
+from rest_framework.exceptions import NotAuthenticated
 
 @api_view(['POST'])
-def create_order(request):
-    user = request.user
+def create_premium_content(request):
+    if not request.user.is_authenticated:
+        raise NotAuthenticated('Login required')
 
-    # Check if user has active subscription
-    if not user.has_active_subscription:
-        raise PaymentRequired({
-            'detail': 'Active subscription required',
-            'upgrade_url': '/subscriptions/upgrade/'
-        })
+    if not request.user.has_subscription:
+        raise PermissionDenied('Premium subscription required')
 
-    # Try to process with external service
-    try:
-        result = payment_service.process(request.data)
-    except ExternalServiceError:
-        raise ServiceUnavailable(
-            'Payment processing temporarily unavailable'
-        )
-
-    return Response(result, status=status.HTTP_201_CREATED)
+    # Create content...
 ```
-
-## Decision Tree: Which Exception to Use?
-
-Use this decision tree to choose the right exception type:
-
-```
-Is the request properly authenticated?
-├─ NO → Is authentication provided but invalid?
-│        ├─ YES → AuthenticationFailed (401)
-│        └─ NO → NotAuthenticated (401)
-│
-└─ YES → Does the user have permission?
-         ├─ NO → PermissionDenied (403)
-         │
-         └─ YES → Does the resource exist?
-                  ├─ NO → NotFound (404)
-                  │
-                  └─ YES → Is the request method allowed?
-                           ├─ NO → MethodNotAllowed (405)
-                           │
-                           └─ YES → Is the request data valid?
-                                    ├─ NO → ValidationError (400)
-                                    │
-                                    └─ YES → Is the request properly formatted?
-                                             ├─ NO → ParseError (400)
-                                             │
-                                             └─ YES → Is the rate limit exceeded?
-                                                      ├─ YES → Throttled (429)
-                                                      │
-                                                      └─ NO → Is media type supported?
-                                                               ├─ NO → UnsupportedMediaType (415)
-                                                               │
-                                                               └─ YES → Is Accept header satisfiable?
-                                                                        ├─ NO → NotAcceptable (406)
-                                                                        └─ YES → Process request normally
-```
-
-### Exception Type Reference
-
-| Exception | Status Code | When to Use |
-|-----------|-------------|-------------|
-| `ValidationError` | 400 | Invalid input data, failed validation |
-| `ParseError` | 400 | Malformed JSON/XML, parsing failure |
-| `AuthenticationFailed` | 401 | Invalid credentials, expired token |
-| `NotAuthenticated` | 401 | No authentication provided |
-| `PermissionDenied` | 403 | User lacks required permissions |
-| `NotFound` | 404 | Resource doesn't exist |
-| `MethodNotAllowed` | 405 | HTTP method not supported for endpoint |
-| `NotAcceptable` | 406 | Can't satisfy Accept header |
-| `UnsupportedMediaType` | 415 | Content-Type not supported |
-| `Throttled` | 429 | Rate limit exceeded |
-| `APIException` | 500 | Generic server error (base class) |
 
 ## Common Mistakes
 
-### 1. Using the Wrong Exception for Validation
+### 1. Using Wrong Exception for Validation
 
 **Wrong:**
 ```python
-# Don't use generic APIException for validation errors
+from rest_framework.exceptions import APIException
+
 if not email_valid(data['email']):
-    raise APIException("Invalid email")  # Returns 500!
+    raise APIException("Invalid email")  # Returns 500 - not appropriate!
 ```
 
 **Right:**
@@ -234,54 +153,33 @@ if not email_valid(data['email']):
 from rest_framework.exceptions import ValidationError
 
 if not email_valid(data['email']):
-    raise ValidationError({'email': 'Enter a valid email address'})
+    raise ValidationError({'email': 'Enter a valid email address'})  # Returns 400
 ```
 
-### 2. Not Providing Structured Error Details
+### 2. String Errors Instead of Field Mapping
 
 **Wrong:**
 ```python
-# String errors are hard for clients to parse
-raise ValidationError("Email is invalid and username is too short")
+# Hard for clients to parse and display field-specific errors
+raise ValidationError("Email is invalid and password is too short")
 ```
 
 **Right:**
 ```python
-# Use dictionaries for field-specific errors
+# Clients can show errors next to each field
 raise ValidationError({
     'email': 'Enter a valid email address',
-    'username': 'Username must be at least 3 characters'
+    'password': 'Password must be at least 8 characters'
 })
 ```
 
-### 3. Forgetting Error Codes
-
-**Wrong:**
-```python
-raise ValidationError("Invalid value")  # No error code
-```
-
-**Right:**
-```python
-from rest_framework.exceptions import ErrorDetail
-
-raise ValidationError({
-    'field': ErrorDetail('Invalid value', code='invalid_format')
-})
-
-# Or set default_code in custom exceptions
-class CustomError(APIException):
-    default_code = 'custom_error'
-```
-
-### 4. Not Returning None for Unhandled Exceptions
+### 3. Not Checking Response is None in Custom Handlers
 
 **Wrong:**
 ```python
 def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
-    # Always modifying response without checking if it's None
-    response.data['custom'] = 'field'  # Crashes on unhandled exceptions!
+    response.data['custom'] = 'field'  # Crashes if response is None!
     return response
 ```
 
@@ -290,93 +188,95 @@ def custom_exception_handler(exc, context):
 def custom_exception_handler(exc, context):
     response = exception_handler(exc, context)
 
-    if response is not None:
+    if response is not None:  # Always check!
         response.data['custom'] = 'field'
 
-    return response  # Returns None for unhandled exceptions
+    return response
 ```
 
-### 5. Catching and Re-raising Without Context
+## When to Customize Exception Handlers
 
-**Wrong:**
-```python
-try:
-    external_service.call()
-except Exception as e:
-    raise APIException("Service error")  # Lost original error!
-```
+**You probably don't need a custom handler.** The default is excellent.
 
-**Right:**
-```python
-import logging
-logger = logging.getLogger(__name__)
+Only customize if you need to:
+- Add a request ID to all errors for tracking
+- Log errors to a monitoring service
+- Transform error format for legacy clients
 
-try:
-    external_service.call()
-except Exception as e:
-    logger.exception("External service failed")
-    raise ServiceUnavailable(
-        f"External service error: {str(e)}"
-    )
-```
-
-### 6. Not Using get_full_details() for Debugging
-
-**Wrong:**
-```python
-# Only getting string details
-try:
-    serializer.is_valid(raise_exception=True)
-except ValidationError as e:
-    print(e.detail)  # Just the message
-```
-
-**Right:**
-```python
-try:
-    serializer.is_valid(raise_exception=True)
-except ValidationError as e:
-    # Get full details including codes
-    print(e.get_full_details())
-    # {'field': [{'message': 'This field is required.', 'code': 'required'}]}
-```
+See [Exception Handlers](./reference/exception-handlers.md) for details.
 
 ## Reference Documentation
 
-- [Built-in Exceptions](./reference/builtin-exceptions.md) - Complete guide to all DRF exception classes
-- [Custom Exceptions](./reference/custom-exceptions.md) - Creating and using custom exception types
-- [Exception Handlers](./reference/exception-handlers.md) - Implementing custom exception handlers
-- [Error Responses](./reference/error-responses.md) - Formatting and structuring error responses
-- [Error Patterns](./reference/examples/error-patterns.py) - Working code examples
+- [Built-in Exceptions](./reference/builtin-exceptions.md) - Complete guide to all exception types
+- [Exception Handlers](./reference/exception-handlers.md) - Customizing error responses (rarely needed)
 
 ## Key Files in DRF Source
 
-- `/home/user/django-rest-framework/rest_framework/exceptions.py` - All exception classes and error handling utilities
-- `/home/user/django-rest-framework/rest_framework/views.py` - Default exception_handler implementation
-
-## Related Skills
-
-- **Serializers** - Understanding serializer validation and ValidationError
-- **Views** - Implementing error handling in APIView and ViewSet classes
-- **Authentication** - Working with authentication-related exceptions
-- **Permissions** - Using PermissionDenied appropriately
-
-## Next Steps
-
-1. Read through [Built-in Exceptions](./reference/builtin-exceptions.md) to understand all available exception types
-2. Review [Error Patterns](./reference/examples/error-patterns.py) for real-world examples
-3. Implement a custom exception handler following [Exception Handlers](./reference/exception-handlers.md)
-4. Study [Error Responses](./reference/error-responses.md) to format consistent API errors
+- `/home/user/django-rest-framework/rest_framework/exceptions.py` - All exception classes
+- `/home/user/django-rest-framework/rest_framework/views.py` - Default exception_handler
 
 ## Pro Tips
 
-- Always use specific exceptions instead of generic APIException
-- Include error codes for programmatic error handling by clients
-- Log exceptions with proper context for debugging
-- Use structured error details (dicts/lists) for complex validations
-- Test exception handling with unit tests and integration tests
-- Document expected error responses in API documentation
-- Consider internationalization (i18n) for error messages
-- Add request IDs to error responses for tracking
-- Use HTTP status codes correctly - they matter for API clients
-- Implement exponential backoff hints for Throttled exceptions
+1. **Use field-specific errors** - Help users fix issues quickly
+2. **ValidationError covers most cases** - Don't overthink it
+3. **The default handler is excellent** - Resist customizing it
+4. **Django exceptions work too** - `Http404` and Django's `PermissionDenied` are auto-converted
+5. **Test error responses** - They're part of your API contract
+
+## Example: Complete View with Error Handling
+
+```python
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError, NotFound, PermissionDenied
+from rest_framework.response import Response
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def manage_article(request, article_id):
+    """Complete example showing error handling patterns."""
+
+    # Get object or 404
+    try:
+        article = Article.objects.get(id=article_id)
+    except Article.DoesNotExist:
+        raise NotFound('Article not found')
+
+    if request.method == 'GET':
+        # Anyone can read
+        return Response(ArticleSerializer(article).data)
+
+    # Check ownership for modifications
+    if article.author != request.user:
+        raise PermissionDenied('Only the author can modify this article')
+
+    if request.method == 'PUT':
+        # Validate input
+        title = request.data.get('title', '').strip()
+        content = request.data.get('content', '').strip()
+
+        errors = {}
+        if not title:
+            errors['title'] = 'This field is required'
+        elif len(title) > 200:
+            errors['title'] = 'Title too long (max 200 characters)'
+
+        if not content:
+            errors['content'] = 'This field is required'
+        elif len(content) < 100:
+            errors['content'] = 'Content too short (min 100 characters)'
+
+        if errors:
+            raise ValidationError(errors)
+
+        # Update article
+        article.title = title
+        article.content = content
+        article.save()
+
+        return Response(ArticleSerializer(article).data)
+
+    if request.method == 'DELETE':
+        article.delete()
+        return Response(status=204)
+```

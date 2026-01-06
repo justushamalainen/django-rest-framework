@@ -2,28 +2,16 @@
 skill: pagination-filtering
 description: Master Django REST Framework's pagination and filtering strategies with decision trees, performance tips, and production-ready patterns
 dependencies: []
-related_skills: [viewsets, serializers, performance]
+related_skills: [viewsets, serializers]
 ---
 
 # Pagination and Filtering in Django REST Framework
 
-This skill teaches you how to implement efficient pagination and filtering in Django REST Framework, helping you handle large datasets while providing excellent API UX.
+This skill teaches you how to implement pagination and filtering in Django REST Framework for handling large datasets with excellent API UX.
 
-## What You'll Learn
+## Quick Start: PageNumberPagination
 
-By completing this skill, you will understand:
-
-- How to choose the right pagination strategy for your use case
-- The differences between PageNumberPagination, LimitOffsetPagination, and CursorPagination
-- How to implement custom pagination classes
-- How to use SearchFilter, OrderingFilter, and DjangoFilterBackend
-- How to create custom filter backends for complex requirements
-- Performance implications of different pagination and filtering strategies
-- Common pitfalls and how to avoid them
-
-## Quick Start: Basic PageNumberPagination
-
-The simplest way to add pagination to your API:
+The most common pagination setup:
 
 ```python
 # settings.py
@@ -49,30 +37,12 @@ class ProductViewSet(viewsets.ModelViewSet):
 
 **API Usage:**
 ```bash
-# Get first page
-GET /api/products/
-
-# Get specific page
-GET /api/products/?page=2
-
-# Customize page size
-GET /api/products/?page=2&page_size=20
+GET /api/products/              # First page
+GET /api/products/?page=2        # Second page
+GET /api/products/?page_size=20  # Custom page size
 ```
 
-**Response format:**
-```json
-{
-  "count": 150,
-  "next": "http://api.example.com/products/?page=3",
-  "previous": "http://api.example.com/products/?page=1",
-  "results": [
-    {"id": 1, "name": "Product 1"},
-    {"id": 2, "name": "Product 2"}
-  ]
-}
-```
-
-## Decision Tree: Choosing a Pagination Strategy
+## Decision Tree: Choosing Pagination
 
 ```
 START: Do you need pagination?
@@ -85,80 +55,42 @@ START: Do you need pagination?
     │   └─ Use: PageNumberPagination
     │       ✓ User-friendly page numbers
     │       ✓ Easy to implement
+    │       ✓ Total count included
     │       ✗ Performance degrades with high page numbers
-    │       ✗ Inconsistent results with frequent updates
     │
-    ├─ Direct jumping/data science (offset 100, limit 50)
+    ├─ Data exports/direct access (offset 100, limit 50)
     │   └─ Use: LimitOffsetPagination
     │       ✓ Flexible direct access
     │       ✓ Useful for data exports
     │       ✗ Same performance issues as PageNumber
-    │       ✗ More complex for end users
     │
-    ├─ Real-time feeds/infinite scroll
-    │   └─ Use: CursorPagination
-    │       ✓ Excellent performance at any position
-    │       ✓ Consistent results during updates
-    │       ✓ No skipped/duplicate records
-    │       ✗ Cannot jump to arbitrary pages
-    │       ✗ Requires unique, ordered field (e.g., timestamp)
-    │
-    └─ Complex requirements (custom response format)
-        └─ Create custom pagination class
-            → See: reference/custom-pagination.md
+    └─ Large datasets/infinite scroll (millions of records)
+        └─ Use: CursorPagination (see reference docs)
+            ✓ Excellent performance at any position
+            ✓ Consistent results during updates
+            ✗ Cannot jump to arbitrary pages
 ```
 
-### When to Use Each Strategy
-
-**PageNumberPagination**: Best for
-- Admin interfaces
-- Search results
-- User-facing lists with page numbers
-- Datasets where total count is needed
-
-**LimitOffsetPagination**: Best for
-- Data exports
-- Integration with external systems expecting limit/offset
-- When you need precise control over positioning
-
-**CursorPagination**: Best for
-- Activity feeds (Twitter, Facebook style)
-- Real-time data streams
-- Large datasets (millions of records)
-- Mobile app infinite scroll
-- When consistency during pagination is critical
-
-## Decision Tree: Choosing Filter Backends
+## Decision Tree: Choosing Filters
 
 ```
 START: What filtering do you need?
 │
 ├─ Text search across multiple fields
 │   └─ Use: SearchFilter
-│       Example: search=laptop
-│       → Searches across multiple fields with various strategies
-│       → See: reference/filter-backends.md#searchfilter
+│       Example: ?search=laptop
 │
 ├─ Sorting/ordering results
 │   └─ Use: OrderingFilter
-│       Example: ordering=-created_at,name
-│       → Client controls sort order
-│       → See: reference/filter-backends.md#orderingfilter
+│       Example: ?ordering=-created_at,name
 │
-├─ Exact field matching with operators
-│   └─ Use: DjangoFilterBackend (django-filter package)
-│       Example: price__gte=100&category=electronics
-│       → Complex filtering with Django ORM lookups
-│       → Requires: pip install django-filter
-│
-├─ Complex business logic filtering
-│   └─ Create custom filter backend
-│       → Full control over queryset filtering
-│       → See: reference/custom-filters.md
+├─ Field filtering with operators
+│   └─ Use: DjangoFilterBackend (django-filter)
+│       Example: ?price__gte=100&category=electronics
+│       Requires: pip install django-filter
 │
 └─ Combine multiple filters
-    └─ Set multiple filter_backends on your view
-        filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
+    └─ Set: filter_backends = [SearchFilter, OrderingFilter, DjangoFilterBackend]
 ```
 
 ## Adding Search and Ordering
@@ -179,237 +111,179 @@ class ProductViewSet(viewsets.ModelViewSet):
     ordering = ['-created_at']  # Default ordering
 
 # API Usage:
-# Search: GET /api/products/?search=laptop
-# Order: GET /api/products/?ordering=-price
-# Both: GET /api/products/?search=laptop&ordering=-price
+# ?search=laptop
+# ?ordering=-price
+# ?search=laptop&ordering=-price
 ```
 
-## Advanced Search Field Prefixes
+### Search Field Prefixes
 
-SearchFilter supports special prefixes for different matching strategies:
+Control search behavior with prefixes:
 
 ```python
 search_fields = [
     '^name',        # Starts with (istartswith)
     '=sku',         # Exact match (iexact)
     '@description', # Full-text search (PostgreSQL only)
-    '$regex_field', # Regex match (iregex)
     'name',         # Contains (default: icontains)
 ]
 ```
 
-## Common Mistakes and How to Avoid Them
+## Django-Filter Integration
+
+For advanced field filtering:
+
+```bash
+pip install django-filter
+```
+
+```python
+# settings.py
+INSTALLED_APPS = [
+    ...
+    'django_filters',
+]
+
+# views.py
+from django_filters import rest_framework as filters
+
+class ProductFilter(filters.FilterSet):
+    min_price = filters.NumberFilter(field_name='price', lookup_expr='gte')
+    max_price = filters.NumberFilter(field_name='price', lookup_expr='lte')
+    name = filters.CharFilter(lookup_expr='icontains')
+
+    class Meta:
+        model = Product
+        fields = ['category', 'in_stock']
+
+class ProductViewSet(viewsets.ModelViewSet):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+    filter_backends = [filters.DjangoFilterBackend]
+    filterset_class = ProductFilter
+
+# API Usage:
+# ?category=electronics
+# ?min_price=100&max_price=500
+# ?name=laptop&in_stock=true
+```
+
+## Combining All Three
+
+```python
+from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework import filters
+
+class ProductViewSet(viewsets.ModelViewSet):
+    queryset = Product.objects.all()
+    serializer_class = ProductSerializer
+
+    # Apply filters in this order
+    filter_backends = [
+        DjangoFilterBackend,      # Field filtering
+        filters.SearchFilter,      # Text search
+        filters.OrderingFilter,    # Ordering
+    ]
+
+    filterset_class = ProductFilter
+    search_fields = ['name', 'description']
+    ordering_fields = ['price', 'created_at', 'name']
+    ordering = ['-created_at']
+
+# API Usage:
+# ?category=electronics&min_price=100&search=laptop&ordering=-price
+```
+
+## Common Mistakes
 
 ### 1. Not Setting max_page_size
 
-**Problem**: Users can request unlimited page sizes, causing performance issues.
+**Problem:** Users can request unlimited page sizes.
 
 ```python
-# BAD: No limit
+# BAD
 class MyPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
-    # Missing: max_page_size
-```
+    # Missing max_page_size!
 
-```python
-# GOOD: Set a reasonable limit
+# GOOD
 class MyPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
-    max_page_size = 100  # Prevent abuse
+    max_page_size = 100
 ```
 
-### 2. Using PageNumber/LimitOffset with Large Datasets
+### 2. SearchFilter on Non-Indexed Fields
 
-**Problem**: Querying page 1000 of a dataset requires the database to scan millions of rows.
-
-```python
-# BAD: For large, frequently updated datasets
-class ActivityViewSet(viewsets.ModelViewSet):
-    queryset = Activity.objects.all()  # Millions of records
-    pagination_class = PageNumberPagination  # Slow for high page numbers
-```
+**Problem:** Searching unindexed fields causes slow queries.
 
 ```python
-# GOOD: Use cursor pagination for large datasets
-class ActivityViewSet(viewsets.ModelViewSet):
-    queryset = Activity.objects.all()
-    pagination_class = CursorPagination  # Consistent performance
-```
-
-### 3. CursorPagination Without Unique Ordering
-
-**Problem**: CursorPagination requires a unique or nearly-unique ordering field.
-
-```python
-# BAD: Non-unique ordering
-class MyCursorPagination(CursorPagination):
-    ordering = 'status'  # Many records with same status
-```
-
-```python
-# GOOD: Add a unique tiebreaker
-class MyCursorPagination(CursorPagination):
-    ordering = ['-created', 'id']  # created + id ensures uniqueness
-```
-
-### 4. SearchFilter on Non-Indexed Fields
-
-**Problem**: Searching on unindexed fields causes slow queries.
-
-```python
-# BAD: No database index
+# BAD
 class Product(models.Model):
     name = models.CharField(max_length=200)  # No db_index
-    sku = models.CharField(max_length=50)    # No db_index
 
 class ProductViewSet(viewsets.ModelViewSet):
-    search_fields = ['name', 'sku']  # Will be slow!
-```
+    search_fields = ['name']  # Slow!
 
-```python
-# GOOD: Add indexes to searched fields
+# GOOD
 class Product(models.Model):
     name = models.CharField(max_length=200, db_index=True)
-    sku = models.CharField(max_length=50, db_index=True)
 
 class ProductViewSet(viewsets.ModelViewSet):
-    search_fields = ['name', 'sku']  # Now fast!
+    search_fields = ['name']  # Fast!
 ```
 
-### 5. Searching Related Fields Without select_related
+### 3. Not Using select_related for Related Fields
 
-**Problem**: N+1 query problem when searching across relationships.
+**Problem:** N+1 query problem when searching/filtering related fields.
 
 ```python
-# BAD: Searches related field without optimization
+# BAD
 class OrderViewSet(viewsets.ModelViewSet):
-    queryset = Order.objects.all()  # No select_related
-    search_fields = ['customer__name']  # Causes N+1 queries
-```
+    queryset = Order.objects.all()
+    search_fields = ['customer__name']  # N+1 queries
 
-```python
-# GOOD: Use select_related for foreign keys
+# GOOD
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.select_related('customer')
     search_fields = ['customer__name']  # Optimized
 ```
 
-### 6. Not Using distinct() with M2M Search
+### 4. No Default Ordering
 
-**Problem**: Searching many-to-many relationships can return duplicate results.
-
-```python
-# BAD: Can return duplicate products
-class Product(models.Model):
-    tags = models.ManyToManyField('Tag')
-
-class ProductViewSet(viewsets.ModelViewSet):
-    queryset = Product.objects.all()
-    search_fields = ['tags__name']  # Returns duplicates if product has multiple matching tags
-```
-
-**Solution**: DRF's SearchFilter automatically handles this, but be aware:
-- It uses EXISTS subquery for better performance
-- This is handled internally, but affects query performance
-
-### 7. Overriding filter_queryset Incorrectly
-
-**Problem**: Breaking the filter chain by not calling super().
+**Problem:** Unpredictable result ordering affects pagination consistency.
 
 ```python
-# BAD: Doesn't call super()
-class MyView(viewsets.ModelViewSet):
-    def filter_queryset(self, queryset):
-        return queryset.filter(is_active=True)  # Breaks pagination and filters!
-```
-
-```python
-# GOOD: Call super() to maintain chain
-class MyView(viewsets.ModelViewSet):
-    def filter_queryset(self, queryset):
-        queryset = super().filter_queryset(queryset)
-        return queryset.filter(is_active=True)
-```
-
-### 8. Mixing Pagination with .count() Queries
-
-**Problem**: Unnecessary count queries on every request.
-
-```python
-# BAD: Calling count() when using pagination
-def list(self, request, *args, **kwargs):
-    queryset = self.filter_queryset(self.get_queryset())
-    total = queryset.count()  # Unnecessary - pagination handles this
-    page = self.paginate_queryset(queryset)
-    # ...
-```
-
-```python
-# GOOD: Let pagination handle counting
-def list(self, request, *args, **kwargs):
-    queryset = self.filter_queryset(self.get_queryset())
-    page = self.paginate_queryset(queryset)
-    if page is not None:
-        serializer = self.get_serializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
-    # Pagination class handles count efficiently
-```
-
-### 9. Not Validating ordering_fields
-
-**Problem**: Allowing ordering on computed properties or write-only fields.
-
-```python
-# BAD: No restriction on ordering fields
-class ProductViewSet(viewsets.ModelViewSet):
-    filter_backends = [OrderingFilter]
-    ordering_fields = '__all__'  # Dangerous! Includes all fields
-```
-
-```python
-# GOOD: Explicitly list orderable fields
-class ProductViewSet(viewsets.ModelViewSet):
-    filter_backends = [OrderingFilter]
-    ordering_fields = ['name', 'price', 'created_at']  # Only indexed/safe fields
-```
-
-### 10. Forgetting to Set Default Ordering
-
-**Problem**: Unpredictable result ordering affects pagination consistency.
-
-```python
-# BAD: No default ordering
+# BAD
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()  # Undefined order
-    pagination_class = PageNumberPagination
-```
 
-```python
-# GOOD: Always set default ordering
+# GOOD
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all().order_by('-created_at', 'id')
-    pagination_class = PageNumberPagination
-    # or
-    ordering = ['-created_at', 'id']  # If using OrderingFilter
+    ordering = ['-created_at', 'id']
 ```
 
 ## Performance Best Practices
 
-### 1. Database Indexing
+### 1. Add Database Indexes
+
 ```python
 class Product(models.Model):
     name = models.CharField(max_length=200, db_index=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         indexes = [
-            models.Index(fields=['-created_at', 'id']),  # For cursor pagination
+            models.Index(fields=['-created_at', 'id']),
+            models.Index(fields=['category', '-price']),
         ]
 ```
 
 ### 2. Optimize QuerySets
+
 ```python
 class OrderViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
@@ -417,70 +291,31 @@ class OrderViewSet(viewsets.ModelViewSet):
             'customer', 'shipping_address'
         ).prefetch_related(
             'items__product'
-        ).only(
-            'id', 'status', 'total', 'created_at',
-            'customer__name', 'customer__email'
         )
 ```
 
-### 3. Use CursorPagination for Large Datasets
-```python
-class LargeFeedPagination(CursorPagination):
-    page_size = 20
-    ordering = '-created_at'
-    cursor_query_param = 'cursor'
-```
-
-### 4. Cache Count Queries
-```python
-from django.core.cache import cache
-
-class CachedCountPagination(PageNumberPagination):
-    def get_count(self, queryset):
-        cache_key = f'count:{queryset.query}'
-        count = cache.get(cache_key)
-        if count is None:
-            count = super().get_count(queryset)
-            cache.set(cache_key, count, 300)  # Cache for 5 minutes
-        return count
-```
-
-## Testing Your Pagination and Filters
+### 3. Use only() to Limit Fields
 
 ```python
-from rest_framework.test import APITestCase
+class ProductViewSet(viewsets.ModelViewSet):
+    def get_queryset(self):
+        queryset = Product.objects.all()
 
-class ProductPaginationTests(APITestCase):
-    def setUp(self):
-        # Create 25 products
-        for i in range(25):
-            Product.objects.create(name=f'Product {i}')
+        if self.action == 'list':
+            # Only fetch essential fields for list view
+            queryset = queryset.only(
+                'id', 'name', 'price', 'image_url'
+            )
 
-    def test_pagination_returns_10_items(self):
-        response = self.client.get('/api/products/')
-        self.assertEqual(len(response.data['results']), 10)
-        self.assertEqual(response.data['count'], 25)
-
-    def test_search_filter(self):
-        response = self.client.get('/api/products/?search=Product 1')
-        # Should return Product 1, 10-19
-        self.assertEqual(response.data['count'], 11)
-
-    def test_ordering(self):
-        response = self.client.get('/api/products/?ordering=-name')
-        first_product = response.data['results'][0]
-        self.assertEqual(first_product['name'], 'Product 9')
+        return queryset
 ```
 
 ## Reference Documentation
 
-For detailed implementation guides and advanced patterns:
+For detailed implementation guides:
 
-- **[Pagination Types Reference](./reference/pagination-types.md)** - Deep dive into PageNumber, LimitOffset, and Cursor pagination
-- **[Custom Pagination](./reference/custom-pagination.md)** - Creating custom pagination classes
+- **[Pagination Types Reference](./reference/pagination-types.md)** - PageNumber and LimitOffset pagination
 - **[Filter Backends](./reference/filter-backends.md)** - SearchFilter, OrderingFilter, DjangoFilterBackend
-- **[Custom Filters](./reference/custom-filters.md)** - Building custom filter backends
-- **[Code Examples](./reference/examples/pagination-filtering-patterns.py)** - Production-ready code patterns
 
 ## Related Source Files
 
@@ -491,10 +326,10 @@ Explore the DRF source code:
 
 ## Next Steps
 
-1. Start with PageNumberPagination for simple use cases
+1. Start with PageNumberPagination for most APIs
 2. Add SearchFilter and OrderingFilter for better UX
-3. Optimize with indexes and queryset methods
-4. Consider CursorPagination for large datasets
-5. Create custom pagination/filters for specific requirements
+3. Use django-filter for advanced field filtering
+4. Optimize with indexes and queryset methods
+5. Consider CursorPagination for very large datasets
 
-Remember: The best pagination strategy balances performance, UX, and your specific use case. Start simple and optimize based on actual usage patterns.
+Remember: Start simple and optimize based on actual usage patterns!
